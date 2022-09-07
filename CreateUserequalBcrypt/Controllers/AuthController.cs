@@ -35,7 +35,7 @@ namespace CreateUserequalBcrypt.Controllers
         public async Task<IActionResult> Login(UserDto userDto)
         {
             if (await _user.UserAlreadyExist(userDto))
-            {
+            { 
                 
                 var login = _user.Login(userDto);
                 if (login == null)
@@ -47,5 +47,16 @@ namespace CreateUserequalBcrypt.Controllers
             return BadRequest("User does not exist");
         }
 
+        [HttpPost("RequestToken")]
+        public IActionResult Register (TokenModel token)
+        {
+            var refreshToken = _user.RenewToken(token);
+            if (Login == null )
+            {
+                return BadRequest("data is null");
+            }    
+            return Ok(refreshToken);
+
+        }
     }
 }

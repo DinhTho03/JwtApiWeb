@@ -19,12 +19,12 @@ namespace CreateUserequalBcrypt.Service
             _userDbContext = userDbContext;
             _account = account;
         }
-        
-        public async Task<UserInfoModel> Add(AddUserInfo addUserInfo)
+        List<UserInfoData> user = new List<UserInfoData>();
+        public async Task<AddUserInfo> Add(AddUserInfo addUserInfo)
         {
 
             var username = _account.UserName().Result;
-            var idUser = _userDbContext.accounts.SingleOrDefault( c =>  c.Username == username ).Id;
+            int idUser = _userDbContext.accounts.SingleOrDefault(c => c.Username == username).Id;
             var addUser = new UserInfoData
             {
                 Address = addUserInfo.Address,
@@ -34,7 +34,7 @@ namespace CreateUserequalBcrypt.Service
             };
             _userDbContext.Add(addUser);
             _userDbContext.SaveChanges();
-            return new UserInfoModel
+            return new AddUserInfo
             {
                 Address = addUserInfo.Address,
                 Phone = addUserInfo.Phone,
@@ -44,7 +44,8 @@ namespace CreateUserequalBcrypt.Service
 
         public void Delete(int id)
         {
-            var userinfo = _userDbContext.userInfoDatas.SingleOrDefault(us => us.Id == id);
+            var idAccount = _account.IdAccount().Result;
+            var userinfo = _userDbContext.userInfoDatas.SingleOrDefault(us => us.Id == id && idAccount == us.IdAccount);
             if (userinfo != null)
             {
                 _userDbContext.Remove(userinfo);
@@ -52,26 +53,31 @@ namespace CreateUserequalBcrypt.Service
             }
         }
 
-        public List<UserInfoModel> GetAll()
+        public  List<UserInfoModel> GetAll()
         {
             var idAccount = _account.IdAccount().Result;
-            var userInfo = _userDbContext.userInfoDatas.Select(us => new UserInfoModel
-            {
-                Id = us.Id,
-                isAdmin = us.isAdmin,
-                Address =us.Address,
-                Phone = us.Phone
-            }).Where(c => c.Id == idAccount);
+            var userInfo = from info in _userDbContext.userInfoDatas
+                           where info.IdAccount == idAccount
+                           select new UserInfoModel
+                           {
+                               Id = info.Id,
+                               Phone = info.Phone,
+                               Address = info.Address,
+                               isAdmin = info.isAdmin
+                           } ;
             return userInfo.ToList();
+            
         }
 
         public UserInfoModel GetById(int id)
         {
-            var userInfo = _userDbContext.userInfoDatas.SingleOrDefault(us => us.Id == id);
+            var idAccount = _account.IdAccount().Result;
+            var userInfo = _userDbContext.userInfoDatas.SingleOrDefault(us => us.Id == id && idAccount == us.IdAccount);
             if (userInfo != null)
             {
                 return new UserInfoModel
                 {
+                    Id = id,
                     Address = userInfo.Address,
                     Phone = userInfo.Phone,
                     isAdmin = userInfo.isAdmin
@@ -83,7 +89,8 @@ namespace CreateUserequalBcrypt.Service
 
         public void Update(int id, UpdateModel update)
         {
-            var userInfo = _userDbContext.userInfoDatas.SingleOrDefault(us => us.Id == id);
+            var idAccount = _account.IdAccount().Result;
+            var userInfo = _userDbContext.userInfoDatas.SingleOrDefault(us => us.Id == id && idAccount == us.IdAccount);
             userInfo.Phone = update.Phone;
             userInfo.Address = update.Address;      
             _userDbContext.Update(userInfo);

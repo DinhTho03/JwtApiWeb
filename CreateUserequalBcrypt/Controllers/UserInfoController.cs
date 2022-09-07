@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace CreateUserequalBcrypt.Controllers
 {
     [Route("api/[controller]")]
-    [ApiController, Authorize]
+    [ApiController]
     public class UserInfoController : ControllerBase
     {
         private readonly IUserInfoResposity _userInfo;
@@ -21,7 +21,8 @@ namespace CreateUserequalBcrypt.Controllers
             _account = account;
         }
         // GET: api/<UserInfoController>
-        [HttpGet]
+
+        [HttpGet, Authorize]
         public IActionResult Get()
         {
             
@@ -29,7 +30,7 @@ namespace CreateUserequalBcrypt.Controllers
         }
 
         // GET api/<UserInfoController>/5
-        [HttpGet("{id}")]
+        [HttpGet("{id}"), Authorize]
         public async Task<IActionResult> Get(int id)
         {
             if (await _userInfo.IdAlreadyExist(id))

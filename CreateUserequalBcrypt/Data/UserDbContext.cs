@@ -9,6 +9,7 @@ namespace CreateUserequalBcrypt.Data
         public UserDbContext (DbContextOptions options) : base(options) { }
 
         public DbSet<AccountData> accounts { get; set; }
+        public DbSet<RefreshTokenData> refreshTokens { get; set; }
         public DbSet<UserInfoData> userInfoDatas { get; set; }
         
         protected override void OnModelCreating(ModelBuilder modelBuilder)

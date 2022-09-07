@@ -1,4 +1,5 @@
-﻿using CreateUserequalBcrypt.Model.UserInfo;
+﻿using CreateUserequalBcrypt.Data.UserInfo;
+using CreateUserequalBcrypt.Model.UserInfo;
 
 namespace CreateUserequalBcrypt.IService.UserInfo
 {
@@ -6,7 +7,7 @@ namespace CreateUserequalBcrypt.IService.UserInfo
     {
         List<UserInfoModel> GetAll();
         UserInfoModel GetById(int id);
-        Task<UserInfoModel> Add(AddUserInfo addUserInfo);
+        Task<AddUserInfo> Add(AddUserInfo addUserInfo);
         void Update(int id, UpdateModel update);
         void Delete(int id);
 

@@ -29,17 +29,17 @@ namespace CreateUserequalBcrypt.Service
             _configuration = configuration;
             _userDbContext = userDbContext;
         }
-        public static ReFreshTokenModel  reFreshTokenModel = new ReFreshTokenModel();
+        public static TokenModel  reFreshTokenModel = new TokenModel();
         public static UserResponse userResponse = new UserResponse();
         public static UserInfoFirst userInfoFirst = new UserInfoFirst(); 
         private readonly IConfiguration _configuration;
         private readonly UserDbContext _userDbContext;
         
 
-        public Token Login(UserDto userDto)
+        public TokenModel Login(UserDto userDto)
         {
-             
-            var passwordHash = _userDbContext.accounts.FirstOrDefault(p => p.Username == userDto.UserName).PasswordHash;
+
+            string passwordHash = _userDbContext.accounts.FirstOrDefault(p => p.Username == userDto.UserName).PasswordHash;
             var password = BCrypt.Net.BCrypt.Verify(userDto.Password, passwordHash);
             userResponse.UserName = userDto.UserName;
             userResponse.PasswordHash = passwordHash;
@@ -49,9 +49,10 @@ namespace CreateUserequalBcrypt.Service
             if (password)
             {
                 
-                return new Token
+                return new TokenModel
                 {
-                    TokenCreated = token
+                    AccessToken = token.AccessToken,
+                    RefreshToken = token.RefreshToken
                 };
             }
             return null;
@@ -95,13 +96,15 @@ namespace CreateUserequalBcrypt.Service
 
 
         //Create Token
-        private  string CreateToken(UserResponse userResponse)
+        private TokenModel CreateToken(UserResponse userResponse)
         {
-            var user = _userDbContext.userInfoDatas.FirstOrDefault();
+            var idAccount = IdAccount().Result;
+            var user = _userDbContext.userInfoDatas.FirstOrDefault(c => c.IdAccount == idAccount);
             List<Claim> claims = new List<Claim>
             {
                 new Claim(ClaimTypes.Name,userResponse.UserName),
                 new Claim(ClaimTypes.MobilePhone,user.Phone),
+                new Claim(JwtRegisteredClaimNames.Jti,Guid.NewGuid().ToString()),
                 new Claim(ClaimTypes.StreetAddress, user.Address),
                 new Claim("Id", user.ToString()),
                 new Claim(ClaimTypes.Role, user.isAdmin.ToString())
@@ -114,9 +117,168 @@ namespace CreateUserequalBcrypt.Service
                 expires : DateTime.Now.AddDays(1),
                 signingCredentials : cred
                 );
+
             var jwt = new JwtSecurityTokenHandler().WriteToken(token);
-            return jwt;
+            var refreshToken = GenerateRefreshToken();
+            var RefreshTokenEntity = new RefreshTokenData
+            {
+                Id = Guid.NewGuid(),
+                IdAccount = IdAccount().Result,
+                JwtId =token.Id,
+                Token = refreshToken,
+                IsUsed =false,
+                IsRevoked = false,
+                IssueAt = DateTime.UtcNow,
+                ExpiredAt = DateTime.UtcNow.AddHours(1)
+            };
+            _userDbContext.Add(RefreshTokenEntity);
+            _userDbContext.SaveChanges();
+            return new TokenModel
+            {
+                AccessToken = jwt,
+                RefreshToken = refreshToken
+            };
         }
+        private string GenerateRefreshToken()
+        {
+            var randomNumber = new byte[32];
+            using (var randomNumberGenerator = RandomNumberGenerator.Create())
+            {
+                randomNumberGenerator.GetBytes(randomNumber);
+                string refreshToken = Convert.ToBase64String(randomNumber);
+                return refreshToken;
+            }
+        }
+
+        public ApiResponse RenewToken(TokenModel tokenModel)
+        {
+            var jwtTokenHandler = new JwtSecurityTokenHandler();
+            var secretKeyBytes = Encoding.UTF8.GetBytes(_configuration.GetSection("AppSettings:SecretKey").Value);
+            var tokenValidateParam = new TokenValidationParameters
+            {
+                //ký Token
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration.GetSection("AppSettings:SecretKey").Value)),
+                // tự cấp token
+                ValidateIssuer = false,
+                ValidateAudience = false,
+                ClockSkew = TimeSpan.Zero,
+                ValidateLifetime = false
+            };
+            try
+            {
+                //check 1 : Accesstoken valid format
+                var tokenInVerification = jwtTokenHandler.ValidateToken(tokenModel.AccessToken,
+                    tokenValidateParam,out var validatedToken);
+
+                //check 2 : check alg
+                if(validatedToken is JwtSecurityToken jwtSecurityToken )
+                {
+                    var result = jwtSecurityToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha512Signature, StringComparison.InvariantCultureIgnoreCase);
+                    if (!result) //false 
+                    {
+                        return new ApiResponse
+                        {
+                            
+                            Success = false,
+                            Message = "invalid token"
+                        };
+                    }
+                }
+                //check 3 : accesstoken expire? 
+                var utcExpireDate = long.Parse(tokenInVerification.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Exp).Value);
+
+                var expireDate = ConvertUnixTimeToDateTime(utcExpireDate);
+                if (expireDate > DateTime.UtcNow)
+                {
+                    return new ApiResponse
+                    {
+                        Success = false,
+                        Message = "Access token has not yet expired"
+                    };
+                }
+
+                //check 4 :check refreshToken exist in Db
+                var storedToken = _userDbContext.refreshTokens.FirstOrDefault(x => x.Token == tokenModel.RefreshToken); 
+                if (storedToken == null)
+                {
+                    return new ApiResponse
+                    {
+                        Success = false,
+                        Message = "RefreshToken token doesn't exist"
+                    };
+                }
+
+                //check 5 :refreshToken is used /revoked ?
+                if (storedToken.IsUsed)
+                {
+                    return new ApiResponse
+                    {
+                        Success = false,
+                        Message = "RefreshToken token has been used"
+                    };
+                }
+
+                if (storedToken.IsRevoked)
+                {
+                    return new ApiResponse
+                    {
+                        Success = false,
+                        Message = "RefreshToken token has been revoked "
+                    };
+                }
+
+                //check 6 : AccessToken id == JwtID in refreshToken
+                var jti = tokenInVerification.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti).Value;
+                if (storedToken.JwtId != jti)
+                {
+                    return new ApiResponse
+                    {
+                        Success = false,
+                        Message = "Token don't matched "
+                    };
+                }
+
+                //update store is used 
+                storedToken.IsRevoked =true;
+                storedToken.IsUsed =true;
+                _userDbContext.Update(storedToken);
+                _userDbContext.SaveChanges();
+
+                // create Token 
+                
+                var token = CreateToken(userResponse);
+                return new ApiResponse
+                {
+                    Success = true,
+                    Message = "renew token success",
+                    Data = token 
+                };
+            }
+            catch
+            {
+                return new ApiResponse
+                {
+                    Success = false,
+                    Message = "invalid token"
+                };
+            }
+        }
+
+        private DateTime ConvertUnixTimeToDateTime(long utcExpireDate)
+        {
+            var dateTimeInterval = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
+            dateTimeInterval.AddSeconds(utcExpireDate).ToUniversalTime();
+
+            return dateTimeInterval;
+        }
+
+
+
+
+
+
+
 
         //private ReFreshTokenModel GenerateRefreshToken()
         //{
@@ -137,7 +299,7 @@ namespace CreateUserequalBcrypt.Service
         //        HttpOnly = true,
         //        Expires = reFreshTokenModel.Expires
         //    };
-            
+
         //    reFreshTokenModel.Expires = reFreshTokenModel.Expires;
         //    reFreshTokenModel.Create = reFreshTokenModel.Create;
         //    reFreshTokenModel.Token = reFreshTokenModel.Token;
@@ -166,5 +328,7 @@ namespace CreateUserequalBcrypt.Service
         {
             return _userDbContext.accounts.FirstOrDefault(c => c.Username == userResponse.UserName).Id;
         }
+
+        
     }
 }

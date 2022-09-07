@@ -8,8 +8,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Swashbuckle.AspNetCore.Filters;
 using System.Text;
-
-
+using System.Text.Json.Serialization;
 
 namespace CreateUserequalBcrypt
 {
@@ -31,6 +30,8 @@ namespace CreateUserequalBcrypt
             services.AddScoped<IAccount, Account>();
             services.AddScoped<IUserInfoResposity, UserInfoResposity>();
 
+            services.AddControllers().AddJsonOptions(x =>
+                x.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles);
 
             services.AddSwaggerGen(options =>
             {
